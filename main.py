@@ -14,39 +14,40 @@ user_sessions = {}
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔍 حل بحث")], [KeyboardButton(text="📝 حل واجب")]], resize_keyboard=True)
-    await message.answer("أهلاً بك! اختر الخدمة:", reply_markup=kb)
+    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔍 حل بحث")], [KeyboardButton(text="📸 حل اختبار")]], resize_keyboard=True)
+    await message.answer("مرحباً بك! اختر الخدمة:", reply_markup=kb)
 
-@dp.message(F.text.in_({"🔍 حل بحث", "📝 حل واجب"}))
-async def handle_choice(message: types.Message):
-    user_sessions[message.from_user.id] = {"type": message.text}
-    await message.answer("أرسل بياناتك (الاسم، الجامعة، الدكتور، الرقم الجامعي) وموضوع البحث (باللغة التي تريدها).")
+@dp.message(F.text == "🔍 حل بحث")
+async def start_research(message: types.Message):
+    user_sessions[message.from_user.id] = "research"
+    await message.answer("أرسل موضوع البحث وسأقوم بكتابته فوراً وبشكل منسق وجاهز للرفع.")
+
+@dp.message(F.text == "📸 حل اختبار")
+async def start_quiz(message: types.Message):
+    user_sessions[message.from_user.id] = "quiz"
+    await message.answer("أرسل صورة السؤال أو الاختبار، وسأقوم بحله لك بدقة متناهية فوراً.")
 
 @dp.message(F.text)
-async def handle_text(message: types.Message):
-    uid = message.from_user.id
-    if uid in user_sessions:
-        await message.answer("جاري كتابة البحث أكاديمياً.. ⏳")
-        
-        # الذكاء الاصطناعي سيكتشف لغة الموضوع تلقائياً ويكتب الملف بنفس اللغة
-        prompt = f"اكتب بحثاً أكاديمياً كاملاً عن: {message.text}. " \
-                 "يجب أن يتضمن: صفحة غلاف رسمية، فهرس، مقدمة، عناوين فصول واضحة، خاتمة، ومراجع. " \
-                 "شرط أساسي: إذا كان الموضوع بالإنجليزية، اكتب البحث بالإنجليزية. إذا كان بالعربي، اكتبه بالعربي. " \
-                 "لا تضف أي تعليقات أو عبارات من طرفك، اكتب محتوى البحث فقط ليكون جاهزاً للرفع."
-        
+async def handle_research(message: types.Message):
+    if user_sessions.get(message.from_user.id) == "research":
+        await message.answer("جاري كتابة البحث.. ⏳")
+        prompt = f"اكتب بحثاً أكاديمياً احترافياً عن: {message.text}. رتبه بوضوح (مقدمة، فصول، خاتمة). استخدم لغة الموضوع (عربي أو إنجليزي). لا تكتب صفحات غلاف ولا مقدمات جانبية، ابدأ بالمحتوى مباشرة وبشكل مرتب."
         response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         
         doc = Document()
-        # إضافة المحتوى بتنسيق مرتب
         doc.add_paragraph(response.choices[0].message.content)
-        
-        file_path = "Academic_Final.docx"
-        doc.save(file_path)
-        
-        await message.answer_document(FSInputFile(file_path), caption="✅ ملفك جاهز للرفع.")
-        user_sessions.pop(uid)
-        os.remove(file_path)
-    else: await message.answer("ابدأ بـ /start")
+        doc.save("Research.docx")
+        await message.answer_document(FSInputFile("Research.docx"), caption="✅ ملف البحث جاهز للرفع.")
+        os.remove("Research.docx")
+        user_sessions.pop(message.from_user.id)
+
+@dp.message(F.photo)
+async def handle_quiz(message: types.Message):
+    await message.answer("جاري تحليل السؤال بدقة.. 🔍")
+    file = await bot.get_file(message.photo[-1].file_id)
+    url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+    response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": [{"type": "text", "text": "حل هذا السؤال بدقة علمية واشرح الإجابة باختصار:"}, {"type": "image_url", "image_url": {"url": url}}]}])
+    await message.answer(response.choices[0].message.content)
 
 async def main(): await dp.start_polling(bot)
 if __name__ == "__main__": asyncio.run(main())
