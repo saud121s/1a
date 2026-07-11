@@ -1,67 +1,40 @@
-import os
-import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
-from openai import OpenAI
-from docx import Document
+# دالة محدثة لإنشاء الملف مع بيانات الطالب في الرأس
+def create_professional_doc(content, user_data):
+    doc = Document()
+    
+    # إضافة بيانات الطالب في بداية الملف
+    doc.add_paragraph(f"الاسم: {user_data.get('name', '---')}")
+    doc.add_paragraph(f"الجامعة: {user_data.get('uni', '---')}")
+    doc.add_paragraph(f"اسم الدكتور: {user_data.get('dr', '---')}")
+    doc.add_paragraph(f"الرقم الجامعي: {user_data.get('id', '---')}")
+    doc.add_paragraph("-" * 30) # خط فاصل جمالي
+    
+    # إضافة المحتوى
+    doc.add_paragraph(content)
+    
+    file_name = "Academic_Task.docx"
+    doc.save(file_name)
+    return file_name
 
-TOKEN = os.getenv("BOT_TOKEN")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-user_sessions = {}
-
-# قائمة الأزرار الرئيسية
-def get_main_kb():
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="🔍 حل بحث / واجب")], 
-        [KeyboardButton(text="📸 حل اختبار")]
-    ], resize_keyboard=True)
-
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    await message.answer("أهلاً بك يا سعود! أنا مساعدك الأكاديمي المحترف. اختر الخدمة:", reply_markup=get_main_kb())
-
-@dp.message(F.text == "🔍 حل بحث / واجب")
-async def start_research(message: types.Message):
-    user_sessions[message.from_user.id] = "research"
-    await message.answer("أرسل موضوع البحث أو الواجب وسأقوم بكتابته فوراً بشكل منسق وجاهز للرفع.")
-
-@dp.message(F.text == "📸 حل اختبار")
-async def start_quiz(message: types.Message):
-    user_sessions[message.from_user.id] = "quiz"
-    await message.answer("أرسل صورة السؤال أو الاختبار، وسأقوم بحله لك بدقة متناهية.")
-
+# تحديث دالة التعامل مع الرسائل لتطلب البيانات وتستخدمها
 @dp.message(F.text)
 async def handle_text(message: types.Message):
     uid = message.from_user.id
-    if user_sessions.get(uid) == "research":
-        await message.answer("جاري كتابة الملف.. ⏳")
-        prompt = f"اكتب بحثاً أكاديمياً أو واجباً كاملاً عن: {message.text}. رتبه بوضوح (مقدمة، فصول، خاتمة). استخدم لغة الموضوع. لا تكتب غلافاً، ابدأ بالمحتوى مباشرة وبشكل مرتب واحترافي."
+    
+    # التحقق مما إذا كان المستخدم يرسل بياناته وموضوع البحث
+    if "الاسم" in message.text and "الجامعة" in message.text:
+        # هنا سنقوم باستخراج البيانات (مبسط)
+        # يمكنك جعل المستخدم يرسلها في رسالة واحدة منظمة
+        await message.answer("جاري معالجة بياناتك وكتابة الملف.. ⏳")
+        
+        # استخراج افتراضي (يفضل أن يرسل المستخدم البيانات بشكل منظم)
+        user_data = {"name": "سعود العنزي", "uni": "كلية الخليج", "dr": "الدكتور سعود", "id": "1282882"}
+        
+        prompt = f"اكتب بحثاً أكاديمياً عن: {message.text}. رتبه بوضوح وابدأ بالمحتوى مباشرة."
         response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         
-        doc = Document()
-        doc.add_paragraph(response.choices[0].message.content)
-        doc.save("Academic_Task.docx")
-        
-        await message.answer_document(FSInputFile("Academic_Task.docx"), caption="✅ الملف جاهز للرفع.")
-        os.remove("Academic_Task.docx")
-        user_sessions.pop(uid)
+        file_path = create_professional_doc(response.choices[0].message.content, user_data)
+        await message.answer_document(FSInputFile(file_path), caption="✅ تم تجهيز ملفك مع البيانات.")
+        os.remove(file_path)
     else:
-        await message.answer("يرجى اختيار خدمة من الأزرار أولاً.", reply_markup=get_main_kb())
-
-@dp.message(F.photo)
-async def handle_photo(message: types.Message):
-    if user_sessions.get(message.from_user.id) == "quiz":
-        await message.answer("جاري تحليل السؤال بدقة.. 🔍")
-        file = await bot.get_file(message.photo[-1].file_id)
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-        response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": [{"type": "text", "text": "حل هذا السؤال بدقة علمية واشرح الإجابة باختصار:"}, {"type": "image_url", "image_url": {"url": url}}]}])
-        await message.answer(response.choices[0].message.content)
-        user_sessions.pop(message.from_user.id)
-    else:
-        await message.answer("الرجاء الضغط على '📸 حل اختبار' قبل إرسال الصورة.")
-
-async def main(): await dp.start_polling(bot)
-if __name__ == "__main__": asyncio.run(main())
+        await message.answer("يرجى إرسال البيانات (الاسم، الجامعة، الدكتور، الرقم الجامعي) متبوعة بموضوع البحث.")
