@@ -10,8 +10,8 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# التخزين المؤقت للبيانات الشخصية
-user_data = {}
+# التخزين المؤقت للبيانات
+user_sessions = {}
 
 def get_main_keyboard():
     return ReplyKeyboardMarkup(keyboard=[
@@ -22,45 +22,50 @@ def get_main_keyboard():
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    await message.answer("أهلاً بك! أنا مساعدك الذكي. اختر الخدمة:", reply_markup=get_main_keyboard())
+    await message.answer("أهلاً بك في منصتك الأكاديمية! 🎓\nأنا مساعدك الشخصي، اختر الخدمة من الأسفل:", reply_markup=get_main_keyboard())
 
-# مرحلة جمع البيانات للبحث والواجب
-@dp.message(F.text.in_({"🔍 حل بحث", "📝 حل واجب"}))
-async def collect_info(message: types.Message):
-    user_data[message.from_user.id] = {"type": message.text}
-    await message.answer("لإعداد ملف احترافي، يرجى كتابة البيانات بالتنسيق التالي في رسالة واحدة:\n"
-                         "الاسم، الجامعة، اسم الدكتور، الرقم الجامعي.")
+@dp.message(F.text.in_({"📸 حل اختبار", "🔍 حل بحث", "📝 حل واجب"}))
+async def handle_choice(message: types.Message):
+    user_sessions[message.from_user.id] = {"state": "waiting_info", "type": message.text}
+    await message.answer(
+        f"أهلاً بك في خدمة ({message.text.replace('📸 ', '').replace('🔍 ', '').replace('📝 ', '')}). 📝\n\n"
+        "لأقوم بتجهيز ملفك بشكل أكاديمي متكامل، يرجى إرسال البيانات التالية في رسالة واحدة:\n"
+        "1. الاسم الثلاثي\n"
+        "2. اسم الجامعة\n"
+        "3. اسم الدكتور\n"
+        "4. الرقم الجامعي\n"
+        "5. موضوع البحث أو الواجب المطلوب",
+        reply_markup=ReplyKeyboardRemove()
+    )
 
-# معالجة النصوص (البيانات أو موضوع البحث)
 @dp.message(F.text)
 async def handle_text(message: types.Message):
-    if message.text == "/start": return
+    if message.text == "/start": 
+        user_sessions.pop(message.from_user.id, None)
+        return await start(message)
     
     uid = message.from_user.id
     
     # إذا كان المستخدم في مرحلة تقديم البيانات
-    if uid in user_data and "data" not in user_data[uid]:
-        user_data[uid]["data"] = message.text
-        await message.answer("تم حفظ البيانات! الآن أرسل موضوع البحث أو نص السؤال للواجب.")
-        return
+    if uid in user_sessions and user_sessions[uid]["state"] == "waiting_info":
+        await message.answer("جاري صياغة ملفك الأكاديمي وتنسيقه.. ⏳")
+        
+        prompt = f"قم بكتابة {user_sessions[uid]['type']} بشكل أكاديمي واحترافي. " \
+                 f"يجب أن يتضمن الملف المعلومات التالية في الأعلى: {message.text}. " \
+                 "اجعل الأسلوب رسمياً ومنسقاً كملف جاهز للتسليم."
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        await message.answer(f"✅ تم تجهيز الملف:\n\n{response.choices[0].message.content}\n\n/start للعودة.")
+        user_sessions.pop(uid)
+    else:
+        await message.answer("يرجى اختيار خدمة من القائمة أولاً عبر الضغط على /start")
 
-    # إذا كان المستخدم جاهزاً لإرسال السؤال
-    await message.answer("جاري الكتابة والتنسيق.. ⏳")
-    info = user_data.get(uid, {}).get("data", "غير متوفر")
-    task_type = user_data.get(uid, {}).get("type", "عمل أكاديمي")
-    
-    prompt = f"قم بكتابة {task_type} بناءً على هذه البيانات الشخصية: {info}. وموضوع السؤال هو: {message.text}"
-    
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    await message.answer(response.choices[0].message.content + "\n\n/start للعودة.")
-
-# معالجة الصور (كما هي)
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
-    await message.answer("جاري التحليل.. 🧠")
+    await message.answer("جاري تحليل صورة الاختبار.. 🧠")
     file_id = message.photo[-1].file_id
     file = await bot.get_file(file_id)
     image_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
@@ -68,11 +73,11 @@ async def handle_photo(message: types.Message):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": [
-            {"type": "text", "text": "حل هذا السؤال بدقة:"},
+            {"type": "text", "text": "حل هذا السؤال الأكاديمي بدقة واحترافية:"},
             {"type": "image_url", "image_url": {"url": image_url}}
         ]}]
     )
-    await message.answer(response.choices[0].message.content + "\n\n/start للعودة.")
+    await message.answer(f"✅ الإجابة:\n\n{response.choices[0].message.content}\n\n/start للعودة.")
 
 async def main():
     await dp.start_polling(bot)
