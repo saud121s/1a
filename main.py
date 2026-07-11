@@ -1,31 +1,52 @@
-# أضف هذه المتغيرات في بداية الكود بجانب user_sessions
-user_quiz_status = {} # لتتبع حالة الاختبار
+import os
+import asyncio
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
+from openai import OpenAI
+from docx import Document
+
+TOKEN = os.getenv("BOT_TOKEN")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+user_sessions = {}
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔍 بحث أو واجب")], [KeyboardButton(text="📸 حل اختبار")]], resize_keyboard=True)
+    await message.answer("أهلاً بك! اختر الخدمة:", reply_markup=kb)
+
+@dp.message(F.text == "🔍 بحث أو واجب")
+async def start_task(message: types.Message):
+    user_sessions[message.from_user.id] = "task"
+    await message.answer("أرسل بياناتك وموضوع البحث.")
+
+@dp.message(F.text == "📸 حل اختبار")
+async def start_quiz(message: types.Message):
+    user_sessions[message.from_user.id] = "quiz"
+    await message.answer("أرسل صورة السؤال.")
+
+@dp.message(F.text)
+async def handle_text(message: types.Message):
+    uid = message.from_user.id
+    if user_sessions.get(uid) == "task":
+        await message.answer("جاري التجهيز..")
+        prompt = f"اكتب بحثاً عن: {message.text}. اكتب المحتوى فقط بدون مقدمات."
+        resp = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
+        doc = Document()
+        doc.add_paragraph(resp.choices[0].message.content)
+        doc.save("file.docx")
+        await message.answer_document(FSInputFile("file.docx"))
+        os.remove("file.docx")
+        user_sessions.pop(uid)
 
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
-    uid = message.from_user.id
-    
-    # إذا ضغط المستخدم "حل اختبار" مسبقاً
-    if user_sessions.get(uid) == "quiz":
-        await message.answer("جاري الحل بدقة.. 🔍")
-        
-        file = await bot.get_file(message.photo[-1].file_id)
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-        
-        # تعليمات مختصرة جداً للـ AI
-        prompt = (
-            "حل الأسئلة في الصورة التالية بشكل مختصر جداً ومباشر. "
-            "التنسيق المطلوب: 1- الجواب، 2- الجواب. "
-            "في نهاية إجابتك اكتب جملة: 'انتهيت من حل الاختبار'."
-        )
-        
-        response = client.chat.completions.create(
-            model="gpt-4o", 
-            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": url}}]}])
-        
-        await message.answer(response.choices[0].message.content)
-        
-        # لا نحذف الحالة إذا أردت إرسال صور أخرى، فقط نحذفها إذا أردت
-        # user_sessions.pop(uid) 
-    else:
-        await message.answer("الرجاء الضغط على زر '📸 حل اختبار' أولاً.")
+    if user_sessions.get(message.from_user.id) == "quiz":
+        await message.answer("جاري الحل..")
+        # هنا سيتم حل الاختبار
+        user_sessions.pop(message.from_user.id)
+
+async def main(): await dp.start_polling(bot)
+if __name__ == "__main__": asyncio.run(main())
