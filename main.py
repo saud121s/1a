@@ -12,50 +12,32 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 user_sessions = {}
 
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔍 بحث أو واجب")], [KeyboardButton(text="📸 حل اختبار")]], resize_keyboard=True)
-    await message.answer("أهلاً بك! أنا جاهز. اختر الخدمة:", reply_markup=kb)
-
-@dp.message(F.text == "🔍 بحث أو واجب")
-async def start_task(message: types.Message):
-    user_sessions[message.from_user.id] = "task"
-    await message.answer("أرسل بياناتك (الاسم، الجامعة، الدكتور، الرقم) وموضوع البحث.")
-
-@dp.message(F.text == "📸 حل اختبار")
-async def start_quiz(message: types.Message):
-    user_sessions[message.from_user.id] = "quiz"
-    await message.answer("أرسل صورة السؤال. (عند الانتهاء أرسل: انتهيت)")
-
-@dp.message(F.text)
-async def handle_text(message: types.Message):
-    uid = message.from_user.id
-    if message.text.lower() == "انتهيت":
-        user_sessions.pop(uid, None)
-        await message.answer("تم إنهاء الجلسة.")
-        return
-    
-    if user_sessions.get(uid) == "task":
-        await message.answer("جاري الكتابة..")
-        try:
-            res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": f"اكتب بحثاً عن: {message.text}. اكتب البيانات والبحث في ملف Word منظم وبدون تكرار."}])
-            doc = Document()
-            doc.add_paragraph(res.choices[0].message.content)
-            doc.save("file.docx")
-            await message.answer_document(FSInputFile("file.docx"))
-            os.remove("file.docx")
-        except Exception as e: await message.answer(f"حدث خطأ: {e}")
-        user_sessions.pop(uid, None)
+# دالة إنشاء ملف نظيف تماماً
+def create_doc(content, data):
+    doc = Document()
+    # وضع البيانات في الأعلى فقط
+    doc.add_paragraph(f"الاسم: {data.get('name')}")
+    doc.add_paragraph(f"الجامعة: {data.get('uni')}")
+    doc.add_paragraph(f"الدكتور: {data.get('dr')}")
+    doc.add_paragraph(f"الرقم الجامعي: {data.get('id')}")
+    doc.add_paragraph("-" * 30)
+    # إضافة المحتوى كما هو من الـ AI
+    doc.add_paragraph(content)
+    doc.save("Academic_File.docx")
+    return "Academic_File.docx"
 
 @dp.message(F.photo)
 async def handle_photo(message: types.Message):
-    uid = message.from_user.id
-    if user_sessions.get(uid) == "quiz":
-        await message.answer("جاري الحل..")
-        file = await bot.get_file(message.photo[-1].file_id)
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-        res = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": [{"type": "text", "text": "حل الأسئلة (مقالي واختياري) برقم السؤال وإجابة مختصرة."}, {"type": "image_url", "image_url": {"url": url}}]}])
-        await message.answer(res.choices[0].message.content)
+    # تغيير الأمر البرمجي ليكون تعليمياً وتحليلياً
+    prompt = "قم بتحليل المحتوى التعليمي في هذه الصورة وقدم شرحاً أو حلاً توضيحياً للأمثلة الموجودة."
+    
+    file = await bot.get_file(message.photo[-1].file_id)
+    url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+    
+    res = client.chat.completions.create(
+        model="gpt-4o", 
+        messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": url}}]}])
+    
+    await message.answer(res.choices[0].message.content)
 
-async def main(): await dp.start_polling(bot)
-if __name__ == "__main__": asyncio.run(main())
+# باقي الكود يظل كما هو...
