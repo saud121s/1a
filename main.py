@@ -16,41 +16,38 @@ user_sessions = {}
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📸 حل اختبار")], [KeyboardButton(text="🔍 حل بحث"), KeyboardButton(text="📝 حل واجب")]], resize_keyboard=True)
+    kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="🔍 حل بحث"), KeyboardButton(text="📝 حل واجب")]], resize_keyboard=True)
     await message.answer("أهلاً بك! اختر الخدمة:", reply_markup=kb)
 
-@dp.message(F.text.in_({"📸 حل اختبار", "🔍 حل بحث", "📝 حل واجب"}))
+@dp.message(F.text.in_({"🔍 حل بحث", "📝 حل واجب"}))
 async def handle_choice(message: types.Message):
-    user_sessions[message.from_user.id] = {"state": "waiting_info", "type": message.text}
-    await message.answer("أرسل بياناتك (الاسم، الجامعة، الدكتور، الرقم الجامعي) وموضوع البحث في رسالة واحدة.")
+    user_sessions[message.from_user.id] = {"type": message.text}
+    await message.answer("أرسل البيانات (الاسم، الجامعة، الدكتور، الرقم الجامعي) وموضوع البحث في رسالة واحدة.")
 
 @dp.message(F.text)
 async def handle_text(message: types.Message):
     uid = message.from_user.id
     if uid in user_sessions:
-        await message.answer("جاري كتابة الملف بتنسيق احترافي.. انتظر ⏳")
+        await message.answer("يتم الآن إعداد ملفك.. انتظر ⏳")
         
-        # نطلب من الذكاء الاصطناعي هيكلة الملف
-        prompt = f"اكتب بحثاً أكاديمياً احترافياً عن: {message.text}. اجعل الهيكل: صفحة غلاف، فهرس، مقدمة، عناوين فصول، خاتمة."
+        # تعليمات صارمة للذكاء الاصطناعي لإنتاج محتوى "خام" بدون تعليقات
+        prompt = f"اكتب بحثاً أكاديمياً كاملاً عن: {message.text}. البيانات المطلوبة: {user_sessions[uid]}. " \
+                 "يجب أن يكون الملف: 1. صفحة غلاف رسمية. 2. فهرس. 3. محتوى مرتب بعناوين فرعية. 4. خاتمة. " \
+                 "مهم جداً: لا تكتب أي مقدمات أو عبارات جانبية، اكتب محتوى البحث فقط ليكون جاهزاً للتحميل."
+        
         response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
         
-        # إنشاء ملف Word وتنسيقه
         doc = Document()
-        
-        # إضافة عنوان رئيسي
-        title = doc.add_heading("بحث أكاديمي", 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # إضافة المحتوى
+        # إضافة المحتوى كما هو من الذكاء الاصطناعي بدون إضافات برمجية تعيق التنسيق
         doc.add_paragraph(response.choices[0].message.content)
         
-        file_path = "Academic_Report.docx"
+        file_path = "Search_Final.docx"
         doc.save(file_path)
         
-        await message.answer_document(FSInputFile(file_path), caption="✅ تم تجهيز ملفك الأكاديمي المنسق.")
+        await message.answer_document(FSInputFile(file_path), caption="✅ ملفك جاهز للرفع في موقع الكلية.")
         user_sessions.pop(uid)
         os.remove(file_path)
-    else: await message.answer("اختر خدمة من القائمة أولاً.")
+    else: await message.answer("ابدأ بـ /start")
 
 async def main(): await dp.start_polling(bot)
 if __name__ == "__main__": asyncio.run(main())
