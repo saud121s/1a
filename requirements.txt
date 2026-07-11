@@ -1,35 +1,4 @@
-@dp.message(F.text)
-async def handle_text(message: types.Message):
-    if message.text == "/start": 
-        user_sessions.pop(message.from_user.id, None)
-        return await start(message)
-    
-    uid = message.from_user.id
-    if uid in user_sessions and user_sessions[uid]["state"] == "waiting_info":
-        await message.answer("جاري إعداد ملفك الأكاديمي بتنسيق احترافي.. ⏳")
-        
-        # التعديل هنا: تعليمات صارمة للتنسيق
-        prompt = (
-            f"أنت خبير أكاديمي. قم بكتابة {user_sessions[uid]['type']} مفصل واحترافي بناءً على البيانات: {message.text}.\n"
-            "يجب أن يتضمن الملف:\n"
-            "1. صفحة غلاف رسمية (العنوان، اسم الطالب، الجامعة، اسم الدكتور، الرقم الجامعي).\n"
-            "2. فهرس محتويات (Table of Contents) مرتب.\n"
-            "3. مقدمة، فصول مرقمة، وخاتمة.\n"
-            "4. استخدم لغة مهنية وأسلوباً أكاديمياً رصيناً.\n"
-            "5. رتب المحتوى بشكل يسهل نسخه إلى ملف Word ليكون جاهزاً للطباعة."
-        )
-        
-        response = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-        
-        # إنشاء ملف Word
-        doc = Document()
-        doc.add_heading(user_sessions[uid]['type'], 0)
-        doc.add_paragraph(response.choices[0].message.content)
-        file_path = "Academic_Report.docx"
-        doc.save(file_path)
-        
-        await message.answer_document(FSInputFile(file_path), caption="✅ تم تجهيز ملفك الأكاديمي بنظام وتنسيق احترافي.")
-        os.remove(file_path)
-        user_sessions.pop(uid)
-    else:
-        await message.answer("يرجى اختيار خدمة من القائمة أولاً عبر /start")
+aiogram
+python-dotenv
+openai
+python-docx
