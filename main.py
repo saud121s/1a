@@ -2,13 +2,12 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from openai import AsyncOpenAI
 
-# إعدادات البوت
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -16,58 +15,66 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# تعريف الحالات
 class MerchantStates(StatesGroup):
-    choosing_style = State()
-    waiting_for_product = State()
-    waiting_for_target = State()
+    waiting_for_product_details = State()
 
-# القوائم
+# القائمة الرئيسية
 main_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="🚀 فكرة تسويق إبداعية")], [KeyboardButton(text="📝 كتابة وصف منتج")]],
+    keyboard=[
+        [KeyboardButton(text="📝 كتابة وصف منتج"), KeyboardButton(text="🏷️ اقتراح هاشتاقات")],
+        [KeyboardButton(text="💬 رد خدمة عملاء"), KeyboardButton(text="🚀 فكرة تسويق إبداعية")],
+        [KeyboardButton(text="⚙️ تغيير أسلوب الرد")]
+    ],
     resize_keyboard=True
 )
 
+# قائمة اختيار الأسلوب
 style_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="أسلوب ولد 👨‍💻")], [KeyboardButton(text="أسلوب بنت 👩‍💻")]],
+    keyboard=[[KeyboardButton(text="أسلوب ولد 👨‍💻"), KeyboardButton(text="أسلوب بنت 👩‍💻")]],
     resize_keyboard=True
 )
+
+# حفظ الأسلوب (افتراضياً ولد)
+user_styles = {}
 
 @dp.message(Command("start"))
-async def start(message: types.Message, state: FSMContext):
-    await message.answer("يا هلا بـ راعي التجارة! أنا مُسوّقك الذكي 💡.\nقبل نبدأ، كيف تحب أكون أسلوبي معك؟", reply_markup=style_menu)
-    await state.set_state(MerchantStates.choosing_style)
+async def start(message: types.Message):
+    user_styles[message.from_user.id] = "أسلوب ولد 👨‍💻"
+    await message.answer("يا هلا بـ راعي التجارة! أنا مُسوّقك الذكي 💡. اختر خدمتك من القائمة وأبشر بالسعد.", reply_markup=main_menu)
 
-@dp.message(MerchantStates.choosing_style)
-async def choose_style(message: types.Message, state: FSMContext):
-    await state.update_data(style=message.text)
-    await message.answer("تم اعتماد الأسلوب! الحين، وش الخدمة اللي تحتاجها؟", reply_markup=main_menu)
-    await state.set_state(MerchantStates.waiting_for_product)
+@dp.message(F.text == "⚙️ تغيير أسلوب الرد")
+async def change_style(message: types.Message):
+    await message.answer("وش الأسلوب اللي يريحك في التعامل؟", reply_markup=style_menu)
 
-@dp.message(MerchantStates.waiting_for_product)
-async def ask_product_and_target(message: types.Message, state: FSMContext):
+@dp.message(F.text.in_({"أسلوب ولد 👨‍💻", "أسلوب بنت 👩‍💻"}))
+async def set_style(message: types.Message):
+    user_styles[message.from_user.id] = message.text
+    await message.answer(f"تم اعتماد {message.text}، أنا جاهز! وش تبي نشتغل عليه؟", reply_markup=main_menu)
+
+@dp.message(F.text.in_({"📝 كتابة وصف منتج", "🏷️ اقتراح هاشتاقات", "💬 رد خدمة عملاء", "🚀 فكرة تسويق إبداعية"}))
+async def ask_details(message: types.Message, state: FSMContext):
     await state.update_data(task=message.text)
-    await message.answer("أبشر! عطني اسم المنتج أو فكرته، ومن هو جمهورك المستهدف؟ (مثلاً: دورة قدرات للطلاب، أو روج للبنات).", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(MerchantStates.waiting_for_target)
+    await message.answer(f"أبشر! بخصوص {message.text}، عطني اسم المنتج، وما هو جمهورك المستهدف؟ (مثلاً: دورة قدرات للطلاب، روج للبنات).", reply_markup=main_menu)
+    await state.set_state(MerchantStates.waiting_for_product_details)
 
-@dp.message(MerchantStates.waiting_for_target)
-async def generate_marketing(message: types.Message, state: FSMContext):
+@dp.message(MerchantStates.waiting_for_product_details)
+async def generate_response(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
-    style = user_data.get("style")
     task = user_data.get("task")
+    style = user_styles.get(message.from_user.id, "أسلوب ولد 👨‍💻")
     
-    await message.answer("جالس أضبط لك خطة تسويقية تكسر الدنيا... 🤖🔥")
+    await message.answer("جالس أفصّل لك الرد تفصيل... 🤖✨")
     
     system_instruction = f"""
-    أنت خبير تسويق إلكتروني سعودي محترف. أسلوبك في الرد هو: {style}.
-    الجمهور المستهدف هو: {message.text}.
-    المهمة: {task}.
+    أنت خبير تسويق إلكتروني سعودي فنان ومبدع.
+    الأسلوب المتبع: {style}.
+    الجمهور المستهدف: {message.text} (يجب أن يكون الكلام موجه لهم مباشرة).
+    المهمة المطلوبة: {task}.
     
-    القواعد:
-    1. تيك توك: اقترح Hook قوي، نص المقطع، و CTA لرابط البايو.
-    2. إنستقرام: اقترح بوست مع Caption جذاب وهاشتاقات سعودية.
-    3. اللهجة: سعودية بيضاء، حماسية، ومناسبة للجمهور المستهدف (سواء كان أسلوب ولد أو بنت).
-    4. التركيز: إبراز الفائدة والقيمة للعميل.
+    شروط الأداء:
+    - لغة سعودية بيضاء جذابة، حماسية، ومقنعة جداً.
+    - إذا كانت فكرة تسويقية: أعطني Hook (هوك) قوي جداً، نص المقطع، و CTA (نداء للعمل) احترافي.
+    - اجعل النص "يلمس" مشاعر الجمهور المستهدف.
     """
     
     response = await client.chat.completions.create(
@@ -76,7 +83,7 @@ async def generate_marketing(message: types.Message, state: FSMContext):
     )
     
     await message.answer(response.choices[0].message.content, reply_markup=main_menu)
-    await state.set_state(MerchantStates.waiting_for_product)
+    await state.clear()
 
 async def main():
     await dp.start_polling(bot)
