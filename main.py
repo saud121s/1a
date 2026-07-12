@@ -2,18 +2,28 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from openai import AsyncOpenAI
 
-# إعداد المتغيرات
+# إعدادات البوت
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# القائمة الجديدة (الأزرار)
+# تعريف الحالات
+class MerchantStates(StatesGroup):
+    waiting_for_product = State()
+    waiting_for_hashtags = State()
+    waiting_for_customer_service = State()
+    waiting_for_marketing_idea = State()
+
+# القائمة الرئيسية
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📝 كتابة وصف منتج")],
@@ -26,27 +36,50 @@ main_menu = ReplyKeyboardMarkup(
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    await message.answer(
-        "يا هلا والله يا راعي التجارة! 🖐️\nأنا مساعدك الذكي، موجود هنا عشان أفك عنك زحمة التسويق وأخلي متجرك يطير في المبيعات.\n\nوش نحتاج نشتغل عليه اليوم؟",
-        reply_markup=main_menu
-    )
+    await message.answer("أهلاً بك في مساعد التاجر الذكي! 🚀\nاختر الخدمة اللي تبيها من القائمة:", reply_markup=main_menu)
+
+# --- معالجة الأزرار ---
+@dp.message(F.text == "📝 كتابة وصف منتج")
+async def desc_cmd(message: types.Message, state: FSMContext):
+    await state.set_state(MerchantStates.waiting_for_product)
+    await message.answer("أرسل لي اسم المنتج ومميزاته، وبكتب لك وصف يبيعه لك في ثواني!")
+
+@dp.message(F.text == "🏷️ اقتراح هاشتاقات")
+async def hash_cmd(message: types.Message, state: FSMContext):
+    await state.set_state(MerchantStates.waiting_for_hashtags)
+    await message.answer("وش هو المنتج أو الخدمة؟ بعطيك أقوى هاشتاقات ترند بالسعودية.")
+
+@dp.message(F.text == "💬 رد خدمة عملاء")
+async def service_cmd(message: types.Message, state: FSMContext):
+    await state.set_state(MerchantStates.waiting_for_customer_service)
+    await message.answer("أرسل لي رسالة العميل، وبصيغ لك رد ذكي ولبق.")
 
 @dp.message(F.text == "🚀 فكرة تسويق إبداعية")
-async def marketing_idea(message: types.Message):
-    await message.answer("أبشر! وش هو منتجك؟ عطني نبذة عنه وبطلع لك فكرة تسويقية سعودية تضرب ترند!")
+async def idea_cmd(message: types.Message, state: FSMContext):
+    await state.set_state(MerchantStates.waiting_for_marketing_idea)
+    await message.answer("أبشر! عطني فكرة عن منتجك، وبصمم لك خطة تسويقية تكسر الدنيا.")
 
-@dp.message()
-async def handle_message(message: types.Message):
-    # هنا يتم الربط مع OpenAI
+# --- المعالجة الذكية ---
+@dp.message(F.text)
+async def process_ai(message: types.Message, state: FSMContext):
+    user_state = await state.get_state()
+    if not user_state:
+        return await message.answer("الرجاء اختيار خدمة من القائمة فوق.", reply_markup=main_menu)
+
+    await message.answer("جاري التحليل... 🤖")
+    
+    prompt = f"أنت خبير تجارة إلكترونية سعودي. أجب باحترافية وبلهجة سعودية بيضاء: {message.text}"
+    
     try:
-        await message.answer("دقايق.. التاجر الذكي جالس يشتغل على طلبك... 🤖")
         response = await client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": f"أنت خبير تسويق سعودي، أجب على هذا الطلب بلهجة سعودية جذابة: {message.text}"}]
+            messages=[{"role": "user", "content": prompt}]
         )
         await message.answer(response.choices[0].message.content)
-    except Exception as e:
-        await message.answer("يا بعدي، صار خلل بسيط. جرب أرسل طلبك مرة ثانية.")
+        await state.clear() # مسح الحالة بعد الرد
+        await message.answer("وش تبي نشتغل عليه الحين؟", reply_markup=main_menu)
+    except Exception:
+        await message.answer("يا بعدي، صار ضغط بسيط، حاول مرة ثانية.")
 
 async def main():
     await dp.start_polling(bot)
