@@ -16,9 +16,8 @@ dp = Dispatcher(storage=MemoryStorage())
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 class MerchantStates(StatesGroup):
-    waiting_for_product_details = State()
+    waiting_for_details = State()
 
-# القائمة الرئيسية
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📝 كتابة وصف منتج"), KeyboardButton(text="🏷️ اقتراح هاشتاقات")],
@@ -28,53 +27,53 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# قائمة اختيار الأسلوب
 style_menu = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="أسلوب ولد 👨‍💻"), KeyboardButton(text="أسلوب بنت 👩‍💻")]],
     resize_keyboard=True
 )
 
-# حفظ الأسلوب (افتراضياً ولد)
 user_styles = {}
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
     user_styles[message.from_user.id] = "أسلوب ولد 👨‍💻"
-    await message.answer("يا هلا بـ راعي التجارة! أنا مُسوّقك الذكي 💡. اختر خدمتك من القائمة وأبشر بالسعد.", reply_markup=main_menu)
+    await message.answer("أهلاً بك يا تاجر! أنا مُسوّقك الذكي، جاهز لرفع مبيعاتك 💡. اختر خدمتك:", reply_markup=main_menu)
 
 @dp.message(F.text == "⚙️ تغيير أسلوب الرد")
 async def change_style(message: types.Message):
-    await message.answer("وش الأسلوب اللي يريحك في التعامل؟", reply_markup=style_menu)
+    await message.answer("اختر الأسلوب اللي يمثل متجرك:", reply_markup=style_menu)
 
 @dp.message(F.text.in_({"أسلوب ولد 👨‍💻", "أسلوب بنت 👩‍💻"}))
 async def set_style(message: types.Message):
     user_styles[message.from_user.id] = message.text
-    await message.answer(f"تم اعتماد {message.text}، أنا جاهز! وش تبي نشتغل عليه؟", reply_markup=main_menu)
+    await message.answer(f"تم اعتماد {message.text}، وش تبي نشتغل عليه الحين؟", reply_markup=main_menu)
 
 @dp.message(F.text.in_({"📝 كتابة وصف منتج", "🏷️ اقتراح هاشتاقات", "💬 رد خدمة عملاء", "🚀 فكرة تسويق إبداعية"}))
 async def ask_details(message: types.Message, state: FSMContext):
     await state.update_data(task=message.text)
-    await message.answer(f"أبشر! بخصوص {message.text}، عطني اسم المنتج، وما هو جمهورك المستهدف؟ (مثلاً: دورة قدرات للطلاب، روج للبنات).", reply_markup=main_menu)
-    await state.set_state(MerchantStates.waiting_for_product_details)
+    await message.answer(f"أبشر! بخصوص {message.text}، عطني اسم المنتج، والجمهور المستهدف (مثلاً: طلاب، بنات، فئة عمرية معينة).", reply_markup=main_menu)
+    await state.set_state(MerchantStates.waiting_for_details)
 
-@dp.message(MerchantStates.waiting_for_product_details)
-async def generate_response(message: types.Message, state: FSMContext):
+@dp.message(MerchantStates.waiting_for_details)
+async def generate_final(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     task = user_data.get("task")
     style = user_styles.get(message.from_user.id, "أسلوب ولد 👨‍💻")
     
-    await message.answer("جالس أفصّل لك الرد تفصيل... 🤖✨")
+    await message.answer("جاري تنفيذ طلبك... 🤖⚡")
     
     system_instruction = f"""
-    أنت خبير تسويق إلكتروني سعودي فنان ومبدع.
-    الأسلوب المتبع: {style}.
-    الجمهور المستهدف: {message.text} (يجب أن يكون الكلام موجه لهم مباشرة).
-    المهمة المطلوبة: {task}.
+    أنت خبير تسويق إلكتروني سعودي محترف جداً. أسلوبك: {style}.
+    المهمة: {task}.
+    الجمهور: {message.text}.
     
-    شروط الأداء:
-    - لغة سعودية بيضاء جذابة، حماسية، ومقنعة جداً.
-    - إذا كانت فكرة تسويقية: أعطني Hook (هوك) قوي جداً، نص المقطع، و CTA (نداء للعمل) احترافي.
-    - اجعل النص "يلمس" مشاعر الجمهور المستهدف.
+    القواعد الصارمة:
+    1. ابدأ فوراً في صلب الموضوع (لا مقدمات، لا "أهلاً بك").
+    2. في التسويق: Hook قوي، نص مباشر، نداء للعمل (رابط البايو).
+    3. في وصف المنتج: وصف جذاب يركز على الفائدة + نداء للعمل.
+    4. في خدمة العملاء: ردود لبقة، احترافية، تحل المشكلة فوراً.
+    5. في الهاشتاقات: عطني أفضل 10 هاشتاقات متداولة بالسعودية.
+    6. اللهجة: سعودية بيضاء حماسية تجذب العميل للشراء فوراً.
     """
     
     response = await client.chat.completions.create(
