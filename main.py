@@ -2,7 +2,7 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -18,60 +18,65 @@ client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # تعريف الحالات
 class MerchantStates(StatesGroup):
-    waiting_for_input = State()
+    choosing_style = State()
+    waiting_for_product = State()
+    waiting_for_target = State()
 
-# القائمة الرئيسية
+# القوائم
 main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📝 كتابة وصف منتج")],
-        [KeyboardButton(text="🏷️ اقتراح هاشتاقات")],
-        [KeyboardButton(text="💬 رد خدمة عملاء")],
-        [KeyboardButton(text="🚀 فكرة تسويق إبداعية")]
-    ],
+    keyboard=[[KeyboardButton(text="🚀 فكرة تسويق إبداعية")], [KeyboardButton(text="📝 كتابة وصف منتج")]],
+    resize_keyboard=True
+)
+
+style_menu = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="أسلوب ولد 👨‍💻")], [KeyboardButton(text="أسلوب بنت 👩‍💻")]],
     resize_keyboard=True
 )
 
 @dp.message(Command("start"))
-async def start(message: types.Message):
-    await message.answer("يا هلا والله يا راعي التجارة! 🖐️\nأنا مساعدك الذكي، موجود هنا عشان أفك عنك زحمة التسويق وأخلي متجرك يطير في المبيعات.\n\nوش نحتاج نشتغل عليه اليوم؟", reply_markup=main_menu)
+async def start(message: types.Message, state: FSMContext):
+    await message.answer("يا هلا بـ راعي التجارة! أنا مُسوّقك الذكي 💡.\nقبل نبدأ، كيف تحب أكون أسلوبي معك؟", reply_markup=style_menu)
+    await state.set_state(MerchantStates.choosing_style)
 
-@dp.message(F.text.in_({"📝 كتابة وصف منتج", "🏷️ اقتراح هاشتاقات", "💬 رد خدمة عملاء", "🚀 فكرة تسويق إبداعية"}))
-async def set_state(message: types.Message, state: FSMContext):
-    await state.update_data(task_type=message.text)
-    await state.set_state(MerchantStates.waiting_for_input)
-    await message.answer(f"تم اختيار: {message.text}. عطني التفاصيل الحين وبضبطك!")
+@dp.message(MerchantStates.choosing_style)
+async def choose_style(message: types.Message, state: FSMContext):
+    await state.update_data(style=message.text)
+    await message.answer("تم اعتماد الأسلوب! الحين، وش الخدمة اللي تحتاجها؟", reply_markup=main_menu)
+    await state.set_state(MerchantStates.waiting_for_product)
 
-@dp.message(MerchantStates.waiting_for_input)
-async def process_ai(message: types.Message, state: FSMContext):
+@dp.message(MerchantStates.waiting_for_product)
+async def ask_product_and_target(message: types.Message, state: FSMContext):
+    await state.update_data(task=message.text)
+    await message.answer("أبشر! عطني اسم المنتج أو فكرته، ومن هو جمهورك المستهدف؟ (مثلاً: دورة قدرات للطلاب، أو روج للبنات).", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(MerchantStates.waiting_for_target)
+
+@dp.message(MerchantStates.waiting_for_target)
+async def generate_marketing(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
-    task = user_data.get("task_type")
+    style = user_data.get("style")
+    task = user_data.get("task")
     
-    await message.answer("جاري التحليل والعمل على طلبك... 🤖🔥")
+    await message.answer("جالس أضبط لك خطة تسويقية تكسر الدنيا... 🤖🔥")
     
     system_instruction = f"""
-    أنت خبير تسويق إلكتروني سعودي محترف، متخصص في تيك توك وإنستقرام.
-    المهمة المطلوبة هي: {task}.
+    أنت خبير تسويق إلكتروني سعودي محترف. أسلوبك في الرد هو: {style}.
+    الجمهور المستهدف هو: {message.text}.
+    المهمة: {task}.
     
-    قواعد الرد:
-    1. تيك توك: اقترح فكرة مقطع عفوي (Hook) يبدأ بكلمة قوية تجذب المشاهد، ثم نص المقطع، ونهاية قوية (Call to Action) توجههم للرابط في البايو.
-    2. إنستقرام: اقترح فكرة "بوست" أو "ريلز" بأسلوب بصري جذاب، مع نص (Caption) احترافي، وهاشتاقات قوية للسوق السعودي.
-    3. اللهجة: سعودية بيضاء، حماسية، ومقنعة.
-    4. التركيز: إبراز "القيمة" (ليش يشتري العميل الآن؟).
+    القواعد:
+    1. تيك توك: اقترح Hook قوي، نص المقطع، و CTA لرابط البايو.
+    2. إنستقرام: اقترح بوست مع Caption جذاب وهاشتاقات سعودية.
+    3. اللهجة: سعودية بيضاء، حماسية، ومناسبة للجمهور المستهدف (سواء كان أسلوب ولد أو بنت).
+    4. التركيز: إبراز الفائدة والقيمة للعميل.
     """
     
-    try:
-        response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": message.text}
-            ]
-        )
-        await message.answer(response.choices[0].message.content)
-        await state.clear()
-        await message.answer("ها، وش رايك؟ إذا تبي نشتغل على شيء ثاني أنا موجود! 🚀", reply_markup=main_menu)
-    except Exception as e:
-        await message.answer("يا بطل، صار ضغط بسيط، جرب ترسل طلبك مرة ثانية.")
+    response = await client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "system", "content": system_instruction}, {"role": "user", "content": message.text}]
+    )
+    
+    await message.answer(response.choices[0].message.content, reply_markup=main_menu)
+    await state.set_state(MerchantStates.waiting_for_product)
 
 async def main():
     await dp.start_polling(bot)
